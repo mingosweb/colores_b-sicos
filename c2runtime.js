@@ -3378,20 +3378,6 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 ;
 (function()
 {
-	function window_innerWidth()
-	{
-		if (typeof jQuery !== "undefined")
-			return jQuery(window).width();
-		else
-			return window.innerWidth;
-	};
-	function window_innerHeight()
-	{
-		if (typeof jQuery !== "undefined")
-			return jQuery(window).height();
-		else
-			return window.innerHeight;
-	};
 	var raf = window["requestAnimationFrame"] ||
 	  window["mozRequestAnimationFrame"]    ||
 	  window["webkitRequestAnimationFrame"] ||
@@ -3465,6 +3451,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		{
 			this.isMobile = /(blackberry|bb10|playbook|palm|symbian|nokia|windows\s+ce|phone|mobile|tablet|kindle|silk)/i.test(navigator.userAgent);
 		}
+		this.isWKWebView = !!(this.isiOS && this.isCordova && window.indexedDB);
 		if (typeof cr_is_preview !== "undefined" && !this.isNWjs && (window.location.search === "?nw" || /nodewebkit/i.test(navigator.userAgent) || /nwjs/i.test(navigator.userAgent)))
 		{
 			this.isNWjs = true;
@@ -3616,6 +3603,17 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 	Runtime.prototype.requestProjectData = function ()
 	{
 		var self = this;
+		if (this.isWKWebView)
+		{
+			this.fetchLocalFileViaCordovaAsText("data.js", function (str)
+			{
+				self.loadProject(JSON.parse(str));
+			}, function (err)
+			{
+				alert("Error fetching data.js");
+			});
+			return;
+		}
 		var xhr;
 		if (this.isWindowsPhone8)
 			xhr = new ActiveXObject("Microsoft.XMLHTTP");
@@ -3701,7 +3699,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		var attribs;
 		var alpha_canvas = !!(this.forceCanvasAlpha || (this.alphaBackground && !(this.isNWjs || this.isWinJS || this.isWindowsPhone8 || this.isCrosswalk || this.isCordova || this.isAmazonWebApp)));
 		if (this.fullscreen_mode > 0)
-			this["setSize"](window_innerWidth(), window_innerHeight(), true);
+			this["setSize"](window.innerWidth, window.innerHeight, true);
 		try {
 			if (this.enableWebGL && (this.isCocoonJs || this.isEjecta || !this.isDomFree))
 			{
@@ -3920,9 +3918,6 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 	{
 		var offx = 0, offy = 0;
 		var neww = 0, newh = 0, intscale = 0;
-		var tryHideAddressBar = (this.isiPhoneiOS6 && this.isSafari && !navigator["standalone"] && !this.isDomFree && !this.isCordova);
-		if (tryHideAddressBar)
-			h += 60;		// height of Safari iPhone iOS 6 address bar
 		if (this.lastWindowWidth === w && this.lastWindowHeight === h && !force)
 			return;
 		this.lastWindowWidth = w;
@@ -4000,13 +3995,6 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		}
 		if (mode < 2)
 			this.aspect_scale = dpr;
-		if (this.isRetina && this.isiPad && dpr > 1)	// don't apply to iPad 1-2
-		{
-			if (w >= 1024)
-				w = 1023;		// 2046 retina pixels
-			if (h >= 1024)
-				h = 1023;
-		}
 		this.cssWidth = Math.round(w);
 		this.cssHeight = Math.round(h);
 		this.width = Math.round(w * dpr);
@@ -4110,12 +4098,6 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 			this.ctx["imageSmoothingEnabled"] = this.linearSampling;
 		}
 		this.tryLockOrientation();
-		if (!this.isDomFree && (tryHideAddressBar || this.isiPhone))
-		{
-			window.setTimeout(function () {
-				window.scrollTo(0, 1);
-			}, 100);
-		}
 	};
 	Runtime.prototype.tryLockOrientation = function ()
 	{
@@ -4182,6 +4164,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 	Runtime.prototype["setSuspended"] = function (s)
 	{
 		var i, len;
+		var self = this;
 		if (s && !this.isSuspended)
 		{
 			cr.logexport("[Construct 2] Suspending");
@@ -4241,7 +4224,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		{
 			var loaderImage = new Image();
 			loaderImage.crossOrigin = "anonymous";
-			loaderImage.src = "loading-logo.png";
+			this.setImageSrc(loaderImage, "loading-logo.png");
 			this.loaderlogos = {
 				logo: loaderImage
 			};
@@ -4596,7 +4579,7 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 			else
 			{
 				img_.crossOrigin = "anonymous";			// required for Arcade sandbox compatibility
-				img_.src = src_;
+				this.setImageSrc(img_, src_);			// work around WKWebView problems
 			}
 		}
 		this.wait_for_textures.push(img_);
@@ -4963,13 +4946,13 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		var isfullscreen = (document["mozFullScreen"] || document["webkitIsFullScreen"] || document["fullScreen"] || !!document["msFullscreenElement"]) && !this.isCordova;
 		if ((isfullscreen || this.isNodeFullscreen) && this.fullscreen_scaling > 0)
 			fsmode = this.fullscreen_scaling;
-		if (fsmode > 0 && (!this.isiOS || window.self !== window.top))
+		if (fsmode > 0)	// r222: experimentally enabling this workaround for all platforms
 		{
 			var curwidth = window.innerWidth;
 			var curheight = window.innerHeight;
 			if (this.lastWindowWidth !== curwidth || this.lastWindowHeight !== curheight)
 			{
-				this["setSize"](window_innerWidth(), window_innerHeight());
+				this["setSize"](curwidth, curheight);
 			}
 		}
 		if (!this.isDomFree)
@@ -6703,6 +6686,16 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		var evinfo = this.getCurrentEventStack();
 		return evinfo.current_event.conditions[evinfo.cndindex];
 	};
+	Runtime.prototype.getCurrentConditionObjectType = function ()
+	{
+		var cnd = this.getCurrentCondition();
+		return cnd.type;
+	};
+	Runtime.prototype.isCurrentConditionFirst = function ()
+	{
+		var evinfo = this.getCurrentEventStack();
+		return evinfo.cndindex === 0;
+	};
 	Runtime.prototype.getCurrentAction = function ()
 	{
 		var evinfo = this.getCurrentEventStack();
@@ -7502,6 +7495,65 @@ quat4.str=function(a){return"["+a[0]+", "+a[1]+", "+a[2]+", "+a[3]+"]"};
 		}
 		if (o["data"])
 			inst.loadFromJSON(o["data"]);
+	};
+	Runtime.prototype.fetchLocalFileViaCordova = function (filename, successCallback, errorCallback)
+	{
+		var path = cordova["file"]["applicationDirectory"] + "www/" + filename;
+		window["resolveLocalFileSystemURL"](path, function (entry)
+		{
+			entry.file(successCallback, errorCallback);
+		}, errorCallback);
+	};
+	Runtime.prototype.fetchLocalFileViaCordovaAsText = function (filename, successCallback, errorCallback)
+	{
+		this.fetchLocalFileViaCordova(filename, function (file)
+		{
+			var reader = new FileReader();
+			reader.onload = function (e)
+			{
+				successCallback(e.target.result);
+			};
+			reader.onerror = errorCallback;
+			reader.readAsText(file);
+		}, errorCallback);
+	};
+	Runtime.prototype.fetchLocalFileViaCordovaAsArrayBuffer = function (filename, successCallback, errorCallback)
+	{
+		this.fetchLocalFileViaCordova(filename, function (file)
+		{
+			var reader = new FileReader();
+			reader.onload = function (e)
+			{
+				successCallback(e.target.result);
+			};
+			reader.readAsArrayBuffer(file);
+		}, errorCallback);
+	};
+	Runtime.prototype.fetchLocalFileViaCordovaAsURL = function (filename, successCallback, errorCallback)
+	{
+		this.fetchLocalFileViaCordovaAsArrayBuffer(filename, function (arrayBuffer)
+		{
+			var blob = new Blob([arrayBuffer]);
+			var url = URL.createObjectURL(blob);
+			successCallback(url);
+		}, errorCallback);
+	};
+	Runtime.prototype.setImageSrc = function (img, src)
+	{
+		if (this.isWKWebView)
+		{
+			this.fetchLocalFileViaCordovaAsURL(src, function (url)
+			{
+				img.src = url;
+			}, function (err)
+			{
+				alert("Failed to load image: " + err);
+			});
+		}
+		else
+		{
+			img.src = src;
+		}
 	};
 	cr.runtime = Runtime;
 	cr.createRuntime = function (canvasid)
@@ -8660,7 +8712,8 @@ window["cr_setSuspended"] = function(s)
 			if (!hasPersistBehavior || this.layout.first_visit)
 			{
 				inst = this.runtime.createInstanceFromInit(initial_inst, this, true);
-;
+				if (!inst)
+					continue;		// may have skipped creation due to fallback effect "destroy"
 				created_instances.push(inst);
 				if (inst.type.global)
 				{
@@ -9932,7 +9985,7 @@ window["cr_setSuspended"] = function(s)
 			this.is_else_block = (this.conditions[0].type == null && this.conditions[0].func == cr.system_object.prototype.cnds.Else);
 		}
 	};
-	window["_c2hh_"] = "7AEB211BE3C67C979923194406A006A90167FC40";
+	window["_c2hh_"] = "724D4EC447E52CA53C171FCB0039CB1A9D630D82";
 	EventBlock.prototype.postInit = function (hasElse/*, prevBlock_*/)
 	{
 		var i, len;
@@ -14818,6 +14871,261 @@ cr.system_object.prototype.loadFromJSON = function (o)
 cr.shaders = {};
 ;
 ;
+cr.plugins_.AJAX = function(runtime)
+{
+	this.runtime = runtime;
+};
+(function ()
+{
+	var isNWjs = false;
+	var path = null;
+	var fs = null;
+	var nw_appfolder = "";
+	var pluginProto = cr.plugins_.AJAX.prototype;
+	pluginProto.Type = function(plugin)
+	{
+		this.plugin = plugin;
+		this.runtime = plugin.runtime;
+	};
+	var typeProto = pluginProto.Type.prototype;
+	typeProto.onCreate = function()
+	{
+	};
+	pluginProto.Instance = function(type)
+	{
+		this.type = type;
+		this.runtime = type.runtime;
+		this.lastData = "";
+		this.curTag = "";
+		this.progress = 0;
+		this.timeout = -1;
+		isNWjs = this.runtime.isNWjs;
+		if (isNWjs)
+		{
+			path = require("path");
+			fs = require("fs");
+			var process = window["process"] || nw["process"];
+			nw_appfolder = path["dirname"](process["execPath"]) + "\\";
+		}
+	};
+	var instanceProto = pluginProto.Instance.prototype;
+	var theInstance = null;
+	window["C2_AJAX_DCSide"] = function (event_, tag_, param_)
+	{
+		if (!theInstance)
+			return;
+		if (event_ === "success")
+		{
+			theInstance.curTag = tag_;
+			theInstance.lastData = param_;
+			theInstance.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnComplete, theInstance);
+		}
+		else if (event_ === "error")
+		{
+			theInstance.curTag = tag_;
+			theInstance.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnError, theInstance);
+		}
+		else if (event_ === "progress")
+		{
+			theInstance.progress = param_;
+			theInstance.curTag = tag_;
+			theInstance.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnProgress, theInstance);
+		}
+	};
+	instanceProto.onCreate = function()
+	{
+		theInstance = this;
+	};
+	instanceProto.saveToJSON = function ()
+	{
+		return { "lastData": this.lastData };
+	};
+	instanceProto.loadFromJSON = function (o)
+	{
+		this.lastData = o["lastData"];
+		this.curTag = "";
+		this.progress = 0;
+	};
+	var next_request_headers = {};
+	var next_override_mime = "";
+	instanceProto.doRequest = function (tag_, url_, method_, data_)
+	{
+		if (this.runtime.isDirectCanvas)
+		{
+			AppMobi["webview"]["execute"]('C2_AJAX_WebSide("' + tag_ + '", "' + url_ + '", "' + method_ + '", ' + (data_ ? '"' + data_ + '"' : "null") + ');');
+			return;
+		}
+		var self = this;
+		var request = null;
+		var doErrorFunc = function ()
+		{
+			self.curTag = tag_;
+			self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnError, self);
+		};
+		var errorFunc = function ()
+		{
+			if (isNWjs)
+			{
+				var filepath = nw_appfolder + url_;
+				if (fs["existsSync"](filepath))
+				{
+					fs["readFile"](filepath, {"encoding": "utf8"}, function (err, data) {
+						if (err)
+						{
+							doErrorFunc();
+							return;
+						}
+						self.lastData = data.replace(/\r\n/g, "\n")
+						self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnComplete, self);
+					});
+				}
+				else
+					doErrorFunc();
+			}
+			else
+				doErrorFunc();
+		};
+		var progressFunc = function (e)
+		{
+			if (!e["lengthComputable"])
+				return;
+			self.progress = e.loaded / e.total;
+			self.curTag = tag_;
+			self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnProgress, self);
+		};
+		try
+		{
+			if (this.runtime.isWindowsPhone8)
+				request = new ActiveXObject("Microsoft.XMLHTTP");
+			else
+				request = new XMLHttpRequest();
+			request.onreadystatechange = function()
+			{
+				if (request.readyState === 4)
+				{
+					self.curTag = tag_;
+					if (request.responseText)
+						self.lastData = request.responseText.replace(/\r\n/g, "\n");		// fix windows style line endings
+					else
+						self.lastData = "";
+					if (request.status >= 400)
+						self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnError, self);
+					else
+					{
+						if ((!isNWjs || self.lastData.length) && !(!isNWjs && request.status === 0 && !self.lastData.length))
+							self.runtime.trigger(cr.plugins_.AJAX.prototype.cnds.OnComplete, self);
+					}
+				}
+			};
+			if (!this.runtime.isWindowsPhone8)
+			{
+				request.onerror = errorFunc;
+				request.ontimeout = errorFunc;
+				request.onabort = errorFunc;
+				request["onprogress"] = progressFunc;
+			}
+			request.open(method_, url_);
+			if (!this.runtime.isWindowsPhone8)
+			{
+				if (this.timeout >= 0 && typeof request["timeout"] !== "undefined")
+					request["timeout"] = this.timeout;
+			}
+			try {
+				request.responseType = "text";
+			} catch (e) {}
+			if (data_)
+			{
+				if (request["setRequestHeader"] && !next_request_headers.hasOwnProperty("Content-Type"))
+				{
+					request["setRequestHeader"]("Content-Type", "application/x-www-form-urlencoded");
+				}
+			}
+			if (request["setRequestHeader"])
+			{
+				var p;
+				for (p in next_request_headers)
+				{
+					if (next_request_headers.hasOwnProperty(p))
+					{
+						try {
+							request["setRequestHeader"](p, next_request_headers[p]);
+						}
+						catch (e) {}
+					}
+				}
+				next_request_headers = {};
+			}
+			if (next_override_mime && request["overrideMimeType"])
+			{
+				try {
+					request["overrideMimeType"](next_override_mime);
+				}
+				catch (e) {}
+				next_override_mime = "";
+			}
+			if (data_)
+				request.send(data_);
+			else
+				request.send();
+		}
+		catch (e)
+		{
+			errorFunc();
+		}
+	};
+	function Cnds() {};
+	Cnds.prototype.OnComplete = function (tag)
+	{
+		return cr.equals_nocase(tag, this.curTag);
+	};
+	Cnds.prototype.OnError = function (tag)
+	{
+		return cr.equals_nocase(tag, this.curTag);
+	};
+	Cnds.prototype.OnProgress = function (tag)
+	{
+		return cr.equals_nocase(tag, this.curTag);
+	};
+	pluginProto.cnds = new Cnds();
+	function Acts() {};
+	Acts.prototype.Request = function (tag_, url_)
+	{
+		this.doRequest(tag_, url_, "GET");
+	};
+	Acts.prototype.RequestFile = function (tag_, file_)
+	{
+		this.doRequest(tag_, file_, "GET");
+	};
+	Acts.prototype.Post = function (tag_, url_, data_, method_)
+	{
+		this.doRequest(tag_, url_, method_, data_);
+	};
+	Acts.prototype.SetTimeout = function (t)
+	{
+		this.timeout = t * 1000;
+	};
+	Acts.prototype.SetHeader = function (n, v)
+	{
+		next_request_headers[n] = v;
+	};
+	Acts.prototype.OverrideMIMEType = function (m)
+	{
+		next_override_mime = m;
+	};
+	pluginProto.acts = new Acts();
+	function Exps() {};
+	Exps.prototype.LastData = function (ret)
+	{
+		ret.set_string(this.lastData);
+	};
+	Exps.prototype.Progress = function (ret)
+	{
+		ret.set_float(this.progress);
+	};
+	pluginProto.exps = new Exps();
+}());
+;
+;
 cr.plugins_.Audio = function(runtime)
 {
 	this.runtime = runtime;
@@ -15677,7 +15985,7 @@ cr.plugins_.Audio = function(runtime)
 		this.supportWebAudioAPI = false;
 		this.failedToLoad = false;
 		this.wasEverReady = false;	// if a buffer is ever marked as ready, it's permanently considered ready after then.
-		if (api === API_WEBAUDIO && is_music)
+		if (api === API_WEBAUDIO && is_music && !audRuntime.isWKWebView)
 		{
 			this.myapi = API_HTML5;
 			this.outNode = createGain();
@@ -15706,20 +16014,47 @@ cr.plugins_.Audio = function(runtime)
 			}
 			this.bufferObject.autoplay = false;	// this is only a source buffer, not an instance
 			this.bufferObject.preload = "auto";
-			this.bufferObject.src = src_;
+			if (audRuntime.isWKWebView)
+			{
+				audRuntime.fetchLocalFileViaCordovaAsURL(src_, function (url)
+				{
+					self.bufferObject.src = url;
+				}, function (err)
+				{
+					self.failedToLoad = true;
+				});
+			}
+			else
+			{
+				this.bufferObject.src = src_;
+			}
 			break;
 		case API_WEBAUDIO:
-			request = new XMLHttpRequest();
-			request.open("GET", src_, true);
-			request.responseType = "arraybuffer";
-			request.onload = function () {
-				self.audioData = request.response;
-				self.decodeAudioBuffer();
-			};
-			request.onerror = function () {
-				self.failedToLoad = true;
-			};
-			request.send();
+			if (audRuntime.isWKWebView)
+			{
+				audRuntime.fetchLocalFileViaCordovaAsArrayBuffer(src_, function (arrayBuffer)
+				{
+					self.audioData = arrayBuffer;
+					self.decodeAudioBuffer();
+				}, function (err)
+				{
+					self.failedToLoad = true;
+				});
+			}
+			else
+			{
+				request = new XMLHttpRequest();
+				request.open("GET", src_, true);
+				request.responseType = "arraybuffer";
+				request.onload = function () {
+					self.audioData = request.response;
+					self.decodeAudioBuffer();
+				};
+				request.onerror = function () {
+					self.failedToLoad = true;
+				};
+				request.send();
+			}
 			break;
 		case API_CORDOVA:
 			this.bufferObject = true;
@@ -16641,27 +16976,26 @@ cr.plugins_.Audio = function(runtime)
 			api = API_WEBAUDIO;
 			context = new webkitAudioContext();
 		}
+		if (this.runtime.isiOS && context)
+		{
+			if (context.close)
+				context.close();
+			if (typeof AudioContext !== "undefined")
+				context = new AudioContext();
+			else if (typeof webkitAudioContext !== "undefined")
+				context = new webkitAudioContext();
+		}
 		var isAndroid = this.runtime.isAndroid;
 		var playDummyBuffer = function ()
 		{
-			if (isContextSuspended)
+			if (isContextSuspended || !context["createBuffer"])
 				return;
 			var buffer = context["createBuffer"](1, 220, 22050);
-			if (buffer["getChannelData"] && isAndroid)
-			{
-				var data = buffer["getChannelData"](0);
-				for (var i = 0, len = data.length; i < len; ++i)
-					data[i] = 0.1;		// low level nonzero DC (likely inaudible)
-			}
 			var source = context["createBufferSource"]();
 			source["buffer"] = buffer;
 			source["connect"](context["destination"]);
 			startSource(source);
 		};
-		if (isAndroid)
-		{
-			window.setInterval(playDummyBuffer, 25000);
-		}
 		if (isMusicWorkaround)
 		{
 			var playQueuedMusic = function ()
@@ -17832,6 +18166,10 @@ cr.plugins_.Audio = function(runtime)
 		else
 			ret.set_float(0);
 	};
+	Exps.prototype.SampleRate = function (ret)
+	{
+		ret.set_int(context ? context.sampleRate : 0);
+	};
 	pluginProto.exps = new Exps();
 }());
 ;
@@ -17880,7 +18218,7 @@ cr.plugins_.Browser = function(runtime)
 				self.runtime.trigger(cr.plugins_.Browser.prototype.cnds.OnUpdateReady, self);
 			});
 			window.applicationCache.addEventListener('progress', function(e) {
-				self.runtime.loadingprogress = e["loaded"] / e["total"];
+				self.runtime.loadingprogress = (e["loaded"] / e["total"]) || 0;
 			});
 		}
 		if (!this.runtime.isDirectCanvas)
@@ -18582,6 +18920,205 @@ cr.plugins_.Browser = function(runtime)
 	Exps.prototype.WindowOuterHeight = function (ret)
 	{
 		ret.set_int(window.outerHeight);
+	};
+	pluginProto.exps = new Exps();
+}());
+;
+;
+cr.plugins_.Function = function(runtime)
+{
+	this.runtime = runtime;
+};
+(function ()
+{
+	var pluginProto = cr.plugins_.Function.prototype;
+	pluginProto.Type = function(plugin)
+	{
+		this.plugin = plugin;
+		this.runtime = plugin.runtime;
+	};
+	var typeProto = pluginProto.Type.prototype;
+	typeProto.onCreate = function()
+	{
+	};
+	pluginProto.Instance = function(type)
+	{
+		this.type = type;
+		this.runtime = type.runtime;
+	};
+	var instanceProto = pluginProto.Instance.prototype;
+	var funcStack = [];
+	var funcStackPtr = -1;
+	var isInPreview = false;	// set in onCreate
+	function FuncStackEntry()
+	{
+		this.name = "";
+		this.retVal = 0;
+		this.params = [];
+	};
+	function pushFuncStack()
+	{
+		funcStackPtr++;
+		if (funcStackPtr === funcStack.length)
+			funcStack.push(new FuncStackEntry());
+		return funcStack[funcStackPtr];
+	};
+	function getCurrentFuncStack()
+	{
+		if (funcStackPtr < 0)
+			return null;
+		return funcStack[funcStackPtr];
+	};
+	function getOneAboveFuncStack()
+	{
+		if (!funcStack.length)
+			return null;
+		var i = funcStackPtr + 1;
+		if (i >= funcStack.length)
+			i = funcStack.length - 1;
+		return funcStack[i];
+	};
+	function popFuncStack()
+	{
+;
+		funcStackPtr--;
+	};
+	instanceProto.onCreate = function()
+	{
+		isInPreview = (typeof cr_is_preview !== "undefined");
+		var self = this;
+		window["c2_callFunction"] = function (name_, params_)
+		{
+			var i, len, v;
+			var fs = pushFuncStack();
+			fs.name = name_.toLowerCase();
+			fs.retVal = 0;
+			if (params_)
+			{
+				fs.params.length = params_.length;
+				for (i = 0, len = params_.length; i < len; ++i)
+				{
+					v = params_[i];
+					if (typeof v === "number" || typeof v === "string")
+						fs.params[i] = v;
+					else if (typeof v === "boolean")
+						fs.params[i] = (v ? 1 : 0);
+					else
+						fs.params[i] = 0;
+				}
+			}
+			else
+			{
+				cr.clearArray(fs.params);
+			}
+			self.runtime.trigger(cr.plugins_.Function.prototype.cnds.OnFunction, self, fs.name);
+			popFuncStack();
+			return fs.retVal;
+		};
+	};
+	function Cnds() {};
+	Cnds.prototype.OnFunction = function (name_)
+	{
+		var fs = getCurrentFuncStack();
+		if (!fs)
+			return false;
+		return cr.equals_nocase(name_, fs.name);
+	};
+	Cnds.prototype.CompareParam = function (index_, cmp_, value_)
+	{
+		var fs = getCurrentFuncStack();
+		if (!fs)
+			return false;
+		index_ = cr.floor(index_);
+		if (index_ < 0 || index_ >= fs.params.length)
+			return false;
+		return cr.do_cmp(fs.params[index_], cmp_, value_);
+	};
+	pluginProto.cnds = new Cnds();
+	function Acts() {};
+	Acts.prototype.CallFunction = function (name_, params_)
+	{
+		var fs = pushFuncStack();
+		fs.name = name_.toLowerCase();
+		fs.retVal = 0;
+		cr.shallowAssignArray(fs.params, params_);
+		var ran = this.runtime.trigger(cr.plugins_.Function.prototype.cnds.OnFunction, this, fs.name);
+		if (isInPreview && !ran)
+		{
+;
+		}
+		popFuncStack();
+	};
+	Acts.prototype.SetReturnValue = function (value_)
+	{
+		var fs = getCurrentFuncStack();
+		if (fs)
+			fs.retVal = value_;
+		else
+;
+	};
+	Acts.prototype.CallExpression = function (unused)
+	{
+	};
+	pluginProto.acts = new Acts();
+	function Exps() {};
+	Exps.prototype.ReturnValue = function (ret)
+	{
+		var fs = getOneAboveFuncStack();
+		if (fs)
+			ret.set_any(fs.retVal);
+		else
+			ret.set_int(0);
+	};
+	Exps.prototype.ParamCount = function (ret)
+	{
+		var fs = getCurrentFuncStack();
+		if (fs)
+			ret.set_int(fs.params.length);
+		else
+		{
+;
+			ret.set_int(0);
+		}
+	};
+	Exps.prototype.Param = function (ret, index_)
+	{
+		index_ = cr.floor(index_);
+		var fs = getCurrentFuncStack();
+		if (fs)
+		{
+			if (index_ >= 0 && index_ < fs.params.length)
+			{
+				ret.set_any(fs.params[index_]);
+			}
+			else
+			{
+;
+				ret.set_int(0);
+			}
+		}
+		else
+		{
+;
+			ret.set_int(0);
+		}
+	};
+	Exps.prototype.Call = function (ret, name_)
+	{
+		var fs = pushFuncStack();
+		fs.name = name_.toLowerCase();
+		fs.retVal = 0;
+		cr.clearArray(fs.params);
+		var i, len;
+		for (i = 2, len = arguments.length; i < len; i++)
+			fs.params.push(arguments[i]);
+		var ran = this.runtime.trigger(cr.plugins_.Function.prototype.cnds.OnFunction, this, fs.name);
+		if (isInPreview && !ran)
+		{
+;
+		}
+		popFuncStack();
+		ret.set_any(fs.retVal);
 	};
 	pluginProto.exps = new Exps();
 }());
@@ -19422,9 +19959,16 @@ cr.plugins_.Sprite = function(runtime)
 			rinstances = candidates2;
 		}
 		else if (orblock)
-			rinstances = rsol.else_instances;
+		{
+			if (this.runtime.isCurrentConditionFirst() && !rsol.else_instances.length && rsol.instances.length)
+				rinstances = rsol.instances;
+			else
+				rinstances = rsol.else_instances;
+		}
 		else
+		{
 			rinstances = rsol.instances;
+		}
 		rpicktype = rtype;
 		needscollisionfinish = (ltype !== rtype && !inverted);
 		if (do_offset)
@@ -22024,34 +22568,47 @@ cr.behaviors.DragnDrop = function(runtime)
 	behaviorProto.exps = new Exps();
 }());
 cr.getObjectRefTable = function () { return [
+	cr.plugins_.AJAX,
 	cr.plugins_.Audio,
 	cr.plugins_.Browser,
+	cr.plugins_.Function,
+	cr.plugins_.Touch,
 	cr.plugins_.Text,
 	cr.plugins_.Sprite,
-	cr.plugins_.Touch,
 	cr.behaviors.DragnDrop,
 	cr.behaviors.DragnDrop.prototype.cnds.OnDrop,
 	cr.plugins_.Sprite.prototype.cnds.IsOverlapping,
 	cr.system_object.prototype.acts.Wait,
 	cr.plugins_.Sprite.prototype.acts.SetPos,
-	cr.plugins_.Sprite.prototype.acts.SetScale,
 	cr.plugins_.Audio.prototype.acts.Play,
+	cr.system_object.prototype.acts.AddVar,
+	cr.plugins_.Sprite.prototype.acts.SetScale,
 	cr.system_object.prototype.acts.SetLayerVisible,
-	cr.system_object.prototype.acts.NextPrevLayout,
+	cr.system_object.prototype.acts.GoToLayout,
 	cr.system_object.prototype.cnds.OnLayoutStart,
+	cr.system_object.prototype.cnds.Every,
+	cr.system_object.prototype.cnds.Compare,
+	cr.system_object.prototype.cnds.Else,
+	cr.system_object.prototype.acts.SetVar,
 	cr.system_object.prototype.cnds.EveryTick,
+	cr.plugins_.Text.prototype.acts.SetText,
 	cr.plugins_.Touch.prototype.cnds.OnTouchObject,
 	cr.plugins_.Browser.prototype.acts.RequestFullScreen,
-	cr.system_object.prototype.cnds.Every,
+	cr.plugins_.Audio.prototype.acts.StopAll,
+	cr.plugins_.Function.prototype.acts.CallFunction,
+	cr.plugins_.AJAX.prototype.acts.Post,
+	cr.plugins_.Browser.prototype.exps.ExecJS,
 	cr.plugins_.Sprite.prototype.acts.RotateClockwise,
-	cr.system_object.prototype.acts.SetVar,
 	cr.plugins_.Browser.prototype.acts.Reload,
 	cr.plugins_.Browser.prototype.acts.GoToURL,
-	cr.plugins_.Text.prototype.acts.SetText,
+	cr.plugins_.Function.prototype.cnds.OnFunction,
+	cr.plugins_.Function.prototype.acts.SetReturnValue,
 	cr.system_object.prototype.exps.round,
+	cr.plugins_.Function.prototype.exps.Param,
+	cr.system_object.prototype.acts.CreateObject,
+	cr.plugins_.Sprite.prototype.acts.Destroy,
 	cr.system_object.prototype.exps.loadingprogress,
 	cr.system_object.prototype.acts.StopLoop,
-	cr.system_object.prototype.cnds.Compare,
 	cr.plugins_.Sprite.prototype.acts.SetVisible
 ];};
 
